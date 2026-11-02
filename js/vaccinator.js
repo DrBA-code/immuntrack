@@ -75,7 +75,7 @@ function outreachOpenHtml(o) {
     <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap"><a class="btn primary" href="#/record">${icon.syringe} Record vaccination</a><button class="btn" data-close-session>${icon.box} Return box &amp; close</button></div>`;
 }
 
-const TYPICAL = { BCG: 1, HepB: 1, OPV: 1, Pentavalent: 2, PCV: 3, Rotavirus: 6, IPV: 2, Measles: 1, 'Yellow Fever': 1, MenA: 1 };
+const TYPICAL = { BCG: 1, HepB: 1, OPV: 1, Pentavalent: 2, PCV: 3, Rotavirus: 6, IPV: 2, Malaria: 3, Measles: 1, 'Yellow Fever': 1, MenA: 1 };
 
 function startOutreach(ref) {
   const mine = ref.communities.filter((c) => c.facility_id === user().facility_id);
@@ -276,7 +276,7 @@ function idCardHtml(c) {
 }
 
 function showIdCard(c) {
-  const next = (c.due || []).find((d) => d.status !== 'given');
+  const next = (c.due || []).find((d) => ['overdue', 'due', 'upcoming'].includes(d.status));
   const m = modal({
     title: 'Child registered',
     body: `${idCardHtml(c)}
@@ -345,8 +345,8 @@ export async function childCard(id) {
 
 export function dueChips(due) {
   if (!due) return '';
-  return `<div class="due-grid">${due.map((d) => `<span class="due ${d.status}" title="${esc(d.status)} · ${fmtDate(d.given_at || d.due)}">${d.status === 'given' ? '✓ ' : ''}${esc(d.label)}</span>`).join('')}</div>
-    <div class="legend" style="margin-top:8px"><span><i style="background:var(--green)"></i>Given</span><span><i style="background:var(--red)"></i>Overdue</span><span><i style="background:var(--amber)"></i>Due today</span><span><i style="background:var(--border-2)"></i>Upcoming</span></div>`;
+  return `<div class="due-grid">${due.map((d) => `<span class="due st-${d.status}" title="${d.status === 'expired' ? 'Not eligible — age limit passed on ' + fmtDate(d.last_day) : esc(d.status) + ' · ' + fmtDate(d.given_at || d.due)}">${d.status === 'given' ? '✓ ' : ''}${esc(d.label)}</span>`).join('')}</div>
+    <div class="legend" style="margin-top:8px"><span><i style="background:var(--green)"></i>Given</span><span><i style="background:var(--red)"></i>Overdue</span><span><i style="background:var(--amber)"></i>Due today</span><span><i style="background:var(--border-2)"></i>Upcoming</span><span><i style="background:transparent;border:1px dashed var(--faint)"></i>Age limit passed</span></div>`;
 }
 
 export function childDetailHtml(c) {
@@ -388,7 +388,8 @@ function renderRecordForm(main, child, home, ref) {
   const o = home?.outreach;
   const site = siteRef(home, ref);
   let gps = null, photo = null, otpSent = false;
-  const next = (child.due || []).find((d) => d.status !== 'given');
+  const OPEN = ['overdue', 'due', 'upcoming'];
+  const next = (child.due || []).find((d) => OPEN.includes(d.status));
   const vaccines = ref.vaccines;
   const vc = visitOtp[child.id];
   const visitCode = vc && Date.now() - vc.at < 29 * 60000 ? vc : null;
@@ -434,7 +435,7 @@ function renderRecordForm(main, child, home, ref) {
   const vac = $('#r-vac'), dose = $('#r-dose'), batch = $('#r-batch'), siteSel = $('#r-site');
   const fillDoses = () => {
     const opts = ref.schedule.filter((s) => s.vaccine === vac.value);
-    const nextForVac = (child.due || []).find((d) => d.vaccine === vac.value && d.status !== 'given');
+    const nextForVac = (child.due || []).find((d) => d.vaccine === vac.value && OPEN.includes(d.status));
     dose.innerHTML = opts.map((s) => `<option value="${s.dose_no}">${s.dose_no}${s.label !== vac.value ? ' · ' + esc(s.label) : ''}</option>`).join('');
     if (nextForVac) dose.value = nextForVac.dose_no;
     const inBox = (o?.items || []).filter((i) => i.vaccine === vac.value);
@@ -450,6 +451,12 @@ function renderRecordForm(main, child, home, ref) {
     const given = (child.doses || []).find((d) => d.vaccine === vac.value && String(d.dose_no) === dose.value && d.status === 'valid');
     if (given) w.push(`Already recorded on ${fmtDate(given.captured_at)} at ${esc(given.facility)}. Submitting again will be flagged as a duplicate.`);
     const sel = batch.selectedOptions[0];
+    const sch = ref.schedule.find((x) => x.vaccine === vac.value && String(x.dose_no) === dose.value);
+    if (sch && child.dob) {
+      const ageDays = Math.floor((Date.now() - new Date(child.dob + 'T00:00:00')) / 86400000);
+      if (sch.max_age_days != null && ageDays > sch.max_age_days) w.push(`<b>Age limit passed:</b> ${esc(sch.label)} is only given up to ${sch.max_age_days < 60 ? Math.round(sch.max_age_days / 7) + ' weeks' : sch.max_age_days < 700 ? Math.round(sch.max_age_days / 30.4) + ' months' : Math.round(sch.max_age_days / 365.25) + ' years'} of age. This child is ${esc(ageText(child.dob))}. Do not give it; the record would be flagged.`);
+      else if (ageDays < sch.age_days - 7) w.push(`${esc(sch.label)} is not due until ${Math.round(sch.age_days / 7)} weeks of age. The record would be flagged.`);
+    }
     if (o && sel && /not in box/.test(sel.textContent)) w.push('This batch was not in the vaccine box you collected. It will be flagged.');
     if (!batch.options.length) w.push('No batch of this vaccine is available.');
     $('#r-warn').innerHTML = w.length ? banner('amber', w.join('<br>')) : '';

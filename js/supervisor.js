@@ -392,7 +392,7 @@ async function demo(main) {
         <button class="btn block" style="margin-top:12px" id="guide">${icon.help} Step-by-step testing guide</button></div>
       <div class="card"><h3>What is real and what is simulated</h3>
         <div class="label" style="margin-bottom:6px">Real in this demo</div>
-        <p class="small" style="margin-top:0">Unique child IDs with QR, face photos, live GPS with geofence, sealed and hash-chained dose records, tamper blocking, 14 automatic checks on every dose plus 4 vial checks on every vaccine box, offline capture and sync, next-dose scheduling, defaulter tracking, supervisor review with audit trail, CSV and DHIS2 payload export.</p>
+        <p class="small" style="margin-top:0">Unique child IDs with QR, face photos, live GPS with geofence, sealed and hash-chained dose records, tamper blocking, 15 automatic checks on every dose plus 4 vial checks on every vaccine box, offline capture and sync, next-dose scheduling, defaulter tracking, supervisor review with audit trail, CSV and DHIS2 payload export.</p>
         <div class="label" style="margin-bottom:6px">Simulated</div>
         <p class="small" style="margin-top:0">SMS delivery (the message shows on screen), LASRA and birth-certificate lookups, the live DHIS2 push. Fingerprints are Phase 2.</p></div>
     </div>

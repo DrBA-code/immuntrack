@@ -36,6 +36,14 @@ SMS delivery (the message shows on screen; connect a gateway such as Termii for 
 
 ## Automatic checks on every dose
 
-GPS missing or more than 1 km from the planned site · no guardian OTP · no point-of-care face photo · batch belongs to another vaccine · batch expired · batch not in the vaccine box collected · batch stock exhausted · duplicate dose · previous dose missing · less than 28 days since previous dose · child below minimum age · a different child recorded within 45 seconds · guardian phone shared by 4+ children.
+GPS missing or more than 1 km from the planned site · no guardian OTP · no point-of-care face photo · batch belongs to another vaccine · batch expired · batch not in the vaccine box collected · batch stock exhausted · duplicate dose · previous dose missing · less than 28 days since previous dose · child below minimum age · child past the upper age limit · a different child recorded within 45 seconds · guardian phone shared by 4+ children.
 
 **When the box is returned:** vials unaccounted for · more doses recorded than opened vials hold · empty vials with no doses · wastage over 50% beyond one vial (possible vial dumping).
+
+## Immunisation schedule
+
+Nigeria's routine schedule (NPHCDA): birth (BCG, HepB, OPV 0); 6 weeks (OPV 1, Penta 1, PCV 1, Rota 1, IPV 1); 10 weeks (OPV 2, Penta 2, PCV 2, Rota 2); 14 weeks (OPV 3, Penta 3, PCV 3, Rota 3, IPV 2); malaria vaccine at 5, 6, 7 and 15 months; 9 months (Measles 1, Yellow Fever, MenA); 15 months (Measles 2).
+
+Due date = date of birth + minimum age; a later dose in a series is never due less than 28 days after the previous one was actually given.
+
+Upper age limits: BCG 11 months, OPV 0 two weeks (NPHCDA); HepB birth dose two weeks (NPHCDA says within 24 hours, two weeks allowed for outreach: to be confirmed); Rotavirus 24 months, Penta and PCV 5 years (WHO). Past the limit a dose shows as "age limit passed", is never suggested as the next dose or counted as a defaulter, and is flagged if recorded. The schedule is one table (`imt_schedule`) and should be confirmed against the current official schedule before a pilot.

@@ -176,9 +176,10 @@ td.r, th.r { text-align: right; }
 
 .due-grid { display: flex; flex-wrap: wrap; gap: 6px; }
 .due { font-size: 12px; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border); color: var(--muted); background: var(--panel-2); }
-.due.given { color: var(--green); background: var(--green-soft); border-color: transparent; }
-.due.overdue { color: var(--red); background: var(--red-soft); border-color: transparent; }
-.due.due { color: var(--amber); background: var(--amber-soft); border-color: transparent; }
+.due.st-given { color: var(--green); background: var(--green-soft); border-color: transparent; }
+.due.st-overdue { color: var(--red); background: var(--red-soft); border-color: transparent; }
+.due.st-due { color: var(--amber); background: var(--amber-soft); border-color: transparent; }
+.due.st-expired { color: var(--faint); background: none; border-style: dashed; text-decoration: line-through; }
 
 /* ---------- banners ---------- */
 .banner { border-radius: var(--radius-sm); padding: 11px 13px; font-size: 14px; display: flex; gap: 10px; align-items: flex-start; margin-bottom: 14px; border: 1px solid transparent; }

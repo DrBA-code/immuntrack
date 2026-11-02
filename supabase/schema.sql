@@ -76,6 +76,7 @@ create table imt_schedule (
   dose_no int,
   age_days int not null,
   label text not null,
+  max_age_days int,          -- after this age the dose is no longer given (null = no upper limit)
   primary key (vaccine, dose_no)
 );
 
@@ -315,18 +316,21 @@ begin
     v_due := c.dob + r.age_days;
     if v_prev is not null then v_due := greatest(v_due, (v_prev at time zone 'Africa/Lagos')::date + 28); end if;
     v_status := case when v_given is not null then 'given'
+                     when r.max_age_days is not null and v_today > c.dob + r.max_age_days then 'expired'
                      when v_due < v_today then 'overdue'
                      when v_due = v_today then 'due'
                      else 'upcoming' end;
     res := res || jsonb_build_object('vaccine', r.vaccine, 'dose_no', r.dose_no, 'label', r.label,
-                                     'due', v_due, 'status', v_status, 'given_at', v_given);
+                                     'due', v_due, 'status', v_status, 'given_at', v_given,
+                                     'max_age_days', r.max_age_days,
+                                     'last_day', case when r.max_age_days is null then null else c.dob + r.max_age_days end);
   end loop;
   return res;
 end $$;
 
 create function imt__next(p_child int) returns jsonb language sql stable as $$
   select e from jsonb_array_elements(imt__due(p_child)) e
-   where e->>'status' <> 'given' order by (e->>'due')::date, e->>'vaccine' limit 1 $$;
+   where e->>'status' in ('overdue', 'due', 'upcoming') order by (e->>'due')::date, e->>'vaccine' limit 1 $$;
 
 create function imt__child_json(p_id int, p_photo boolean default true) returns jsonb language sql stable as $$
   select jsonb_build_object(
@@ -673,7 +677,10 @@ begin
   if v_dose > v_min then
     select * into v_prev from imt_doses where child_id = c.id and vaccine = v_vaccine and dose_no = v_dose - 1 and status = 'valid'
       order by captured_at desc limit 1;
-    if v_prev.id is null then
+    if v_prev.id is null and not exists (
+         -- a missed dose whose age window has closed (e.g. OPV 0 after 2 weeks) does not block the next one
+         select 1 from imt_schedule ps where ps.vaccine = v_vaccine and ps.dose_no = v_dose - 1
+           and ps.max_age_days is not null and (v_at at time zone 'Africa/Lagos')::date > c.dob + ps.max_age_days) then
       v_flags := v_flags || jsonb_build_object('code', 'SEQUENCE', 'text', format('Previous dose (%s) is not on record', imt__label(v_vaccine, v_dose - 1)));
     elsif v_at - v_prev.captured_at < interval '28 days' then
       v_flags := v_flags || jsonb_build_object('code', 'TOO_SOON', 'text',
@@ -683,6 +690,13 @@ begin
   if (v_at at time zone 'Africa/Lagos')::date < c.dob + s.age_days - 7 then
     v_flags := v_flags || jsonb_build_object('code', 'TOO_YOUNG', 'text',
       format('Child is younger than the minimum age for %s (%s weeks)', s.label, s.age_days / 7));
+  end if;
+  if s.max_age_days is not null and (v_at at time zone 'Africa/Lagos')::date > c.dob + s.max_age_days then
+    v_flags := v_flags || jsonb_build_object('code', 'TOO_OLD', 'text',
+      format('Child is past the upper age limit for %s (%s) — this dose should not be given',
+             s.label, case when s.max_age_days < 60 then (s.max_age_days / 7) || ' weeks'
+                           when s.max_age_days < 700 then round(s.max_age_days / 30.4) || ' months'
+                           else round(s.max_age_days / 365.25) || ' years' end));
   end if;
   -- several vaccines for the SAME child in one visit is normal; only a quick switch to a DIFFERENT child is suspicious
   select max(captured_at) into v_last from imt_doses where vaccinator_id = u.id and status = 'valid' and child_id <> c.id;
@@ -1060,14 +1074,19 @@ begin
     ('OPV', 20, 'Oral', 'Oral', 3), ('Pentavalent', 10, 'Intramuscular', 'Left thigh', 4),
     ('PCV', 4, 'Intramuscular', 'Right thigh', 5), ('Rotavirus', 1, 'Oral', 'Oral', 6),
     ('IPV', 5, 'Intramuscular', 'Right thigh', 7), ('Measles', 10, 'Subcutaneous', 'Left upper arm', 8),
-    ('Yellow Fever', 10, 'Subcutaneous', 'Right upper arm', 9), ('MenA', 10, 'Intramuscular', 'Left thigh', 10);
-  insert into imt_schedule values
-    ('BCG',0+1,0,'BCG'), ('HepB',0,0,'HepB birth'), ('OPV',0,0,'OPV 0'),
-    ('OPV',1,42,'OPV 1'), ('Pentavalent',1,42,'Penta 1'), ('PCV',1,42,'PCV 1'), ('Rotavirus',1,42,'Rota 1'),
-    ('OPV',2,70,'OPV 2'), ('Pentavalent',2,70,'Penta 2'), ('PCV',2,70,'PCV 2'), ('Rotavirus',2,70,'Rota 2'),
-    ('OPV',3,98,'OPV 3'), ('Pentavalent',3,98,'Penta 3'), ('PCV',3,98,'PCV 3'), ('Rotavirus',3,98,'Rota 3'), ('IPV',1,98,'IPV 1'),
-    ('Measles',1,270,'Measles 1'), ('Yellow Fever',1,270,'Yellow Fever'), ('MenA',1,270,'MenA'), ('IPV',2,270,'IPV 2'),
-    ('Measles',2,450,'Measles 2');
+    ('Yellow Fever', 10, 'Subcutaneous', 'Right upper arm', 9), ('MenA', 10, 'Intramuscular', 'Left thigh', 10),
+    ('Malaria', 2, 'Intramuscular', 'Left thigh', 11);
+  -- Nigeria routine schedule (NPHCDA). Upper age limits: BCG 11 months and OPV 0 two weeks (NPHCDA);
+  -- HepB birth dose 2 weeks (NPHCDA says within 24 hours; 2 weeks allowed for outreach — team to confirm);
+  -- Rotavirus 24 months, Penta and PCV 5 years (WHO). Others have no upper limit.
+  insert into imt_schedule (vaccine, dose_no, age_days, label, max_age_days) values
+    ('BCG',1,0,'BCG',334), ('HepB',0,0,'HepB birth',14), ('OPV',0,0,'OPV 0',14),
+    ('OPV',1,42,'OPV 1',null), ('Pentavalent',1,42,'Penta 1',1825), ('PCV',1,42,'PCV 1',1825), ('Rotavirus',1,42,'Rota 1',730), ('IPV',1,42,'IPV 1',null),
+    ('OPV',2,70,'OPV 2',null), ('Pentavalent',2,70,'Penta 2',1825), ('PCV',2,70,'PCV 2',1825), ('Rotavirus',2,70,'Rota 2',730),
+    ('OPV',3,98,'OPV 3',null), ('Pentavalent',3,98,'Penta 3',1825), ('PCV',3,98,'PCV 3',1825), ('Rotavirus',3,98,'Rota 3',730), ('IPV',2,98,'IPV 2',null),
+    ('Malaria',1,150,'Malaria 1',null), ('Malaria',2,180,'Malaria 2',null), ('Malaria',3,210,'Malaria 3',null),
+    ('Measles',1,270,'Measles 1',null), ('Yellow Fever',1,270,'Yellow Fever',null), ('MenA',1,270,'MenA',null),
+    ('Measles',2,450,'Measles 2',null), ('Malaria',4,450,'Malaria 4',null);
   insert into imt_batches (vaccine, batch_no, expiry, doses_received, received_at) values
     ('BCG', 'BC2026-044', v_today + 70, 400, v_today - 120),
     ('HepB', 'HB2026-019', v_today + 200, 300, v_today - 120),
@@ -1078,7 +1097,8 @@ begin
     ('IPV', 'IP2026-027', v_today + 190, 200, v_today - 120),
     ('Measles', 'MS2026-009', v_today + 75, 68, v_today - 120),
     ('Yellow Fever', 'YF2026-015', v_today + 220, 150, v_today - 120),
-    ('MenA', 'MA2026-006', v_today + 240, 150, v_today - 120);
+    ('MenA', 'MA2026-006', v_today + 240, 150, v_today - 120),
+    ('Malaria', 'ML2026-021', v_today + 210, 200, v_today - 120);
 
   -- children with plausible histories
   for i in 1..48 loop
